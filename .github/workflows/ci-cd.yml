@@ -51,17 +51,14 @@ jobs:
             mkdir -p /home/azureuser/VotingApp
             cd /home/azureuser/VotingApp
 
-            # Перевіряємо Docker
-            if ! command -v docker &> /dev/null
+            # Перевіряємо Docker і docker-compose
+            if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null
             then
-              echo "Docker не знайдено. Встановлюємо..."
+              echo "Docker або docker-compose не знайдено. Встановлюємо..."
               sudo apt update
               sudo apt install -y docker.io docker-compose
-              sudo usermod -aG docker $USER
-              echo "Docker встановлено. Будь ласка, перепідключіться через SSH перед наступним деплоєм."
-              exit 1
             fi
 
-            # Pull та запуск контейнерів
-            docker compose pull
-            docker compose up -d --remove-orphans
+            # Pull та запуск контейнерів через docker-compose
+            sudo docker-compose pull
+            sudo docker-compose up -d --remove-orphans
