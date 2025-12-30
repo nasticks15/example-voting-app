@@ -56,7 +56,7 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo -e "${{ secrets.WM_KEY_SSH }}" > ~/.ssh/id_rsa
+          echo -e "${{ secrets.WM_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
 
