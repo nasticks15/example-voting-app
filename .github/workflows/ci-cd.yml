@@ -4,26 +4,28 @@ on:
   push:
     branches:
       - main
+
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-  ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-  ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
   VM_HOST: ${{ secrets.VM_IP }}
   VM_USER: ${{ secrets.VM_USER }}
-  APP_DIR: /home/azureuser/voting-app
+  APP_DIR: /home/${{ secrets.VM_USER }}/voting-app
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------- CHECKOUT ----------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ---------- ACR LOGIN ----------
       - name: Login to Azure Container Registry
         run: |
-          echo "${ACR_PASSWORD}" | docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME --password-stdin
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
+      # ---------- BUILD & PUSH ----------
       - name: Build and Push vote
         run: |
           docker build -t $ACR_LOGIN_SERVER/vote:latest ./vote
@@ -39,6 +41,7 @@ jobs:
           docker build -t $ACR_LOGIN_SERVER/worker:latest ./worker
           docker push $ACR_LOGIN_SERVER/worker:latest
 
+      # ---------- PREPARE COMPOSE ----------
       - name: Prepare docker-compose for production
         run: |
           sed \
@@ -47,6 +50,7 @@ jobs:
             -e "s|build: ./worker|image: $ACR_LOGIN_SERVER/worker:latest|" \
             docker-compose.prod.yml > docker-compose.tmp.yml
 
+      # ---------- SETUP SSH ----------
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -54,15 +58,23 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
 
+      # ---------- CREATE APP DIR ON VM ----------
+      - name: Create app directory on VM
+        run: ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "mkdir -p $APP_DIR"
+
+      # ---------- COPY COMPOSE ----------
       - name: Copy docker-compose to VM
         run: |
           scp docker-compose.tmp.yml $VM_USER@$VM_HOST:$APP_DIR/docker-compose.yml
 
+      # ---------- DEPLOY ----------
       - name: Deploy on VM
         run: |
           ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST << 'EOF'
             set -e
-            cd /home/azureuser/voting-app
+            cd /home/${VM_USER}/voting-app
+            # Логін в ACR для vote/result/worker
+            echo "${ACR_PASSWORD}" | docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
           EOF
