@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
 env:
   APP_DIR: /home/azureuser/voting-app
 
