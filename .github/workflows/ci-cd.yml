@@ -73,7 +73,7 @@ services:
     image: redis:latest
   db:
     image: postgres:latest
-EOF
+  EOF
 
             # Pull та запуск контейнерів
             sudo docker compose pull
