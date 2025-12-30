@@ -1,77 +1,77 @@
-name: CI/CD Pipeline
+name: CI-CD Voting App
 
 on:
   push:
     branches:
       - main
 
+env:
+  ACR_LOGIN_SERVER: aboldyrueva.azurecr.io
+  VM_HOST: 4.212.93.16
+  VM_USER: azureuser
+  APP_DIR: /home/azureuser/VotingApp
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Клонування форку
-      - uses: actions/checkout@v3
+      # ---------- CHECKOUT ----------
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # 2. Логін у ACR
-      - name: Log in to Azure Container Registry
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      # 3. Build + Push vote
-      - name: Build and push vote
+      # ---------- ACR LOGIN ----------
+      - name: Login to Azure Container Registry
         run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/vote:latest ./vote
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/vote:latest
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      # 4. Build + Push result
-      - name: Build and push result
+      # ---------- BUILD & PUSH ----------
+      - name: Build and Push vote
         run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/result:latest ./result
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/result:latest
+          docker build -t $ACR_LOGIN_SERVER/vote:latest ./vote
+          docker push $ACR_LOGIN_SERVER/vote:latest
 
-      # 5. Build + Push worker
-      - name: Build and push worker
+      - name: Build and Push result
         run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/worker:latest ./worker
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/worker:latest
+          docker build -t $ACR_LOGIN_SERVER/result:latest ./result
+          docker push $ACR_LOGIN_SERVER/result:latest
 
-      # 6. Deploy на VM через SSH
-      - name: Deploy to VM
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ secrets.VM_IP }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            mkdir -p /home/azureuser/VotingApp
+      - name: Build and Push worker
+        run: |
+          docker build -t $ACR_LOGIN_SERVER/worker:latest ./worker
+          docker push $ACR_LOGIN_SERVER/worker:latest
+
+      # ---------- PREPARE COMPOSE ----------
+      - name: Prepare docker-compose for production
+        run: |
+          sed \
+            -e "s|build: ./vote|image: $ACR_LOGIN_SERVER/vote:latest|" \
+            -e "s|build: ./result|image: $ACR_LOGIN_SERVER/result:latest|" \
+            -e "s|build: ./worker|image: $ACR_LOGIN_SERVER/worker:latest|" \
+            docker-compose.prod.yml > docker-compose.prod.tmp.yml
+
+      # ---------- SETUP SSH ----------
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
+
+      # ---------- COPY COMPOSE ----------
+      - name: Copy docker-compose to VM
+        run: |
+          scp docker-compose.prod.tmp.yml $VM_USER@$VM_HOST:$APP_DIR/docker-compose.yml
+
+      # ---------- DEPLOY ----------
+      - name: Deploy on VM
+        run: |
+          ssh $VM_USER@$VM_HOST << 'EOF'
+            set -e
             cd /home/azureuser/VotingApp
-
-            if ! command -v docker &> /dev/null || ! command -v docker compose &> /dev/null
-            then
-              echo "Docker або Docker Compose не знайдено. Встановлюємо..."
-              sudo apt update
-              sudo apt install -y docker.io docker-compose-plugin
-            fi
-
-            cat <<EOF > docker-compose.yml
-version: '3.9'
-services:
-  vote:
-    image: ${{ secrets.ACR_LOGIN_SERVER }}/vote:latest
-  result:
-    image: ${{ secrets.ACR_LOGIN_SERVER }}/result:latest
-  worker:
-    image: ${{ secrets.ACR_LOGIN_SERVER }}/worker:latest
-  redis:
-    image: redis:latest
-  db:
-    image: postgres:latest
-EOF
-
-            sudo docker compose pull
-            sudo docker compose up -d --remove-orphans
-            sudo docker compose ps
+            # Логін в ACR для vote/result/worker
+            docker login aboldyrueva.azurecr.io -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+            # Логін в Docker Hub для redis/postgres
+            docker login -u herman1968 -p ${{ secrets.DOCKERHUB_PASSWORDSS }}
+            docker compose -f docker-compose.yml up -d --remove-orphans --no-build
+          EOF
