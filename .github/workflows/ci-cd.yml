@@ -75,6 +75,5 @@ services:
     image: postgres:latest
 EOF
 
-            # Pull та запуск контейнерів
             sudo docker-compose pull
             sudo docker-compose up -d --remove-orphans
