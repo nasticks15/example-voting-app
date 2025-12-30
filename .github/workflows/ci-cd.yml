@@ -5,76 +5,56 @@ on:
     branches:
       - main
 
-env:
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-  VM_HOST: ${{ secrets.VM_IP }}
-  VM_USER: ${{ secrets.VM_USER }}
-  APP_DIR: /home/${{ secrets.VM_USER }}/voting-app
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------- CHECKOUT ----------
+      # ---------- Checkout ----------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------- ACR LOGIN ----------
+      # ---------- Login to ACR ----------
       - name: Login to Azure Container Registry
         run: |
-          echo "${{ secrets.ACR_PASSWORD }}" | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      # ---------- BUILD & PUSH ----------
+      # ---------- Build & Push ----------
       - name: Build and Push vote
         run: |
-          docker build -t $ACR_LOGIN_SERVER/vote:latest ./vote
-          docker push $ACR_LOGIN_SERVER/vote:latest
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/vote:latest ./vote
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/vote:latest
 
       - name: Build and Push result
         run: |
-          docker build -t $ACR_LOGIN_SERVER/result:latest ./result
-          docker push $ACR_LOGIN_SERVER/result:latest
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/result:latest ./result
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/result:latest
 
       - name: Build and Push worker
         run: |
-          docker build -t $ACR_LOGIN_SERVER/worker:latest ./worker
-          docker push $ACR_LOGIN_SERVER/worker:latest
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/worker:latest ./worker
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/worker:latest
 
-      # ---------- PREPARE COMPOSE ----------
-      - name: Prepare docker-compose for production
+      # ---------- Prepare docker-compose ----------
+      - name: Prepare docker-compose
         run: |
-          sed \
-            -e "s|build: ./vote|image: $ACR_LOGIN_SERVER/vote:latest|" \
-            -e "s|build: ./result|image: $ACR_LOGIN_SERVER/result:latest|" \
-            -e "s|build: ./worker|image: $ACR_LOGIN_SERVER/worker:latest|" \
-            docker-compose.prod.yml > docker-compose.tmp.yml
+          mkdir -p .github/workflows/tmp
+          sed -e "s|build: ./vote|image: ${{ secrets.ACR_LOGIN_SERVER }}/vote:latest|" \
+              -e "s|build: ./result|image: ${{ secrets.ACR_LOGIN_SERVER }}/result:latest|" \
+              -e "s|build: ./worker|image: ${{ secrets.ACR_LOGIN_SERVER }}/worker:latest|" \
+              .github/workflows/docker-compose.prod.yml > .github/workflows/tmp/docker-compose.yml
 
-      # ---------- SETUP SSH ----------
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
-
-      # ---------- CREATE APP DIR ON VM ----------
-      - name: Create app directory on VM
-        run: ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "mkdir -p $APP_DIR"
-
-      # ---------- COPY COMPOSE ----------
-      - name: Copy docker-compose to VM
-        run: |
-          scp docker-compose.tmp.yml $VM_USER@$VM_HOST:$APP_DIR/docker-compose.yml
-
-      # ---------- DEPLOY ----------
-      - name: Deploy on VM
-        run: |
-          ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST << 'EOF'
-            set -e
-            cd /home/${VM_USER}/voting-app
-            # Логін в ACR для vote/result/worker
-            echo "${ACR_PASSWORD}" | docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME --password-stdin
-            docker compose pull
-            docker compose up -d --remove-orphans
-          EOF
+      # ---------- Copy compose & deploy ----------
+      - name: Copy and deploy on VM
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.VM_IP }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            mkdir -p /home/${{ secrets.VM_USER }}/voting-app
+            scp -o StrictHostKeyChecking=no .github/workflows/tmp/docker-compose.yml ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/home/${{ secrets.VM_USER }}/voting-app/docker-compose.yml
+            cd /home/${{ secrets.VM_USER }}/voting-app
+            echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+            docker-compose pull
+            docker-compose up -d --remove-orphans
