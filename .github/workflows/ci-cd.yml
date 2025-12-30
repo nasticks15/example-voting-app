@@ -47,11 +47,9 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            # Створюємо папку на VM
             mkdir -p /home/azureuser/VotingApp
             cd /home/azureuser/VotingApp
 
-            # Перевірка Docker та Docker Compose
             if ! command -v docker &> /dev/null || ! command -v docker compose &> /dev/null
             then
               echo "Docker або Docker Compose не знайдено. Встановлюємо..."
@@ -59,8 +57,7 @@ jobs:
               sudo apt install -y docker.io docker-compose-plugin
             fi
 
-            # Створюємо docker-compose.yml на VM з образами з ACR
-            cat <<EOF > docker-compose.yml
+cat <<EOF > docker-compose.yml
 version: '3.9'
 services:
   vote:
@@ -73,8 +70,8 @@ services:
     image: redis:latest
   db:
     image: postgres:latest
-  EOF
+EOF
 
-            # Pull та запуск контейнерів
             sudo docker compose pull
             sudo docker compose up -d --remove-orphans
+            sudo docker compose ps
