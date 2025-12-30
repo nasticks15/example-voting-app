@@ -51,7 +51,7 @@ jobs:
             mkdir -p /home/azureuser/VotingApp
             cd /home/azureuser/VotingApp
 
-            # Перевірка Docker та docker-compose
+            # Перевірка Docker та Docker Compose
             if ! command -v docker &> /dev/null || ! command -v docker compose &> /dev/null
             then
               echo "Docker або Docker Compose не знайдено. Встановлюємо..."
