@@ -6,9 +6,9 @@ on:
       - main
 
 env:
-  ACR_LOGIN_SERVER: aboldyrueva.azurecr.io
-  VM_HOST: 4.212.93.16
-  VM_USER: azureuser
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  VM_HOST: ${{ secrets.VM_IP }}
+  VM_USER: ${{ secrets.VM_USER }}
   APP_DIR: /home/azureuser/VotingApp
 
 jobs:
@@ -48,7 +48,7 @@ jobs:
             -e "s|build: ./vote|image: $ACR_LOGIN_SERVER/vote:latest|" \
             -e "s|build: ./result|image: $ACR_LOGIN_SERVER/result:latest|" \
             -e "s|build: ./worker|image: $ACR_LOGIN_SERVER/worker:latest|" \
-            docker-compose.prod.yml > docker-compose.prod.tmp.yml
+            .github/workflows/docker-compose.prod.yml > docker-compose.prod.tmp.yml
 
       # ---------- SETUP SSH ----------
       - name: Setup SSH
@@ -70,7 +70,7 @@ jobs:
             set -e
             cd /home/azureuser/VotingApp
             # Логін в ACR для vote/result/worker
-            docker login aboldyrueva.azurecr.io -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+            docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
             # Логін в Docker Hub для redis/postgres
             docker login -u herman1968 -p ${{ secrets.DOCKERHUB_PASSWORDSS }}
             docker compose -f docker-compose.yml up -d --remove-orphans --no-build
