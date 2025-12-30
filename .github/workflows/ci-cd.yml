@@ -46,8 +46,4 @@ jobs:
           host: ${{ secrets.VM_IP }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            cd /home/azureuser/VotingApp
-            # Оновлення образів та запуск контейнерів
-            docker compose pull
-            docker compose up -d --remove-orphans
+          s
