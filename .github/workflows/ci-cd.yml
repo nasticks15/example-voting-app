@@ -18,16 +18,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------- CHECKOUT ----------
+      # ---------- Checkout repo ----------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------- ACR LOGIN ----------
+      # ---------- ACR Login ----------
       - name: Login to Azure Container Registry
         run: |
-          echo "${{ env.ACR_PASSWORD }}" | docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME --password-stdin
+          echo $ACR_PASSWORD | docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME --password-stdin
 
-      # ---------- BUILD & PUSH ----------
+      # ---------- Build and Push Docker images ----------
       - name: Build and Push vote
         run: |
           docker build -t $ACR_LOGIN_SERVER/vote:latest ./vote
@@ -43,7 +43,7 @@ jobs:
           docker build -t $ACR_LOGIN_SERVER/worker:latest ./worker
           docker push $ACR_LOGIN_SERVER/worker:latest
 
-      # ---------- PREPARE COMPOSE ----------
+      # ---------- Prepare docker-compose ----------
       - name: Prepare docker-compose for production
         run: |
           sed \
@@ -52,31 +52,31 @@ jobs:
             -e "s|build: ./worker|image: $ACR_LOGIN_SERVER/worker:latest|" \
             docker-compose.prod.yml > docker-compose.tmp.yml
 
-      # ---------- SETUP SSH ----------
-      - name: Setup SSH
+      # ---------- Setup SSH ----------
+      - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.WM_KEY_SSH }}" | tr '\\n' '\n' > ~/.ssh/id_rsa
+          echo -e "${{ secrets.WM_KEY_SSH }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts
 
-      # ---------- CREATE APP DIRECTORY ----------
-      - name: Create app directory on VM
-        run: |
-          ssh -i ~/.ssh/id_rsa $VM_USER@$VM_HOST "mkdir -p $APP_DIR"
+      # ---------- Create folder on VM ----------
+      - name: Create folder on VM
+        run: ssh -i ~/.ssh/id_rsa $VM_USER@$VM_HOST "mkdir -p $APP_DIR"
 
-      # ---------- COPY COMPOSE ----------
+      # ---------- Copy docker-compose ----------
       - name: Copy docker-compose to VM
-        run: |
-          scp -i ~/.ssh/id_rsa docker-compose.tmp.yml $VM_USER@$VM_HOST:$APP_DIR/docker-compose.yml
+        run: scp -i ~/.ssh/id_rsa docker-compose.tmp.yml $VM_USER@$VM_HOST:$APP_DIR/docker-compose.yml
 
-      # ---------- DEPLOY ----------
+      # ---------- Deploy ----------
       - name: Deploy on VM
         run: |
           ssh -i ~/.ssh/id_rsa $VM_USER@$VM_HOST << 'EOF'
             set -e
-            cd /home/azureuser/voting-app
-            docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME -p $ACR_PASSWORD
+            cd $APP_DIR
+            # Login to ACR
+            echo $ACR_PASSWORD | docker login $ACR_LOGIN_SERVER -u $ACR_USERNAME --password-stdin
+            # Pull and run containers
             docker-compose -f docker-compose.yml pull
             docker-compose -f docker-compose.yml up -d --remove-orphans
           EOF
